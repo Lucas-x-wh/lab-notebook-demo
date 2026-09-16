@@ -9,6 +9,7 @@
   let cloud = null;
   let ready = false;
   let dbRef = null;
+  let visionModel = null;
 
   function init() {
     try {
@@ -180,5 +181,54 @@
     } catch (e) { say('云端同步失败：' + e.message); }
   }
 
-  window.cloudSync = { boot, pushRunsChanged, pushTemplatesChanged, pushMeta, getTombstones: async () => (await idbGet('tombstones')) || { runs: [], templates: [] } };
+  /* ---------- 云端视觉模型 OCR ---------- */
+  async function shrinkImage(dataUrl) {
+    const img = await new Promise((resolve, reject) => {
+      const im = new Image();
+      im.onload = () => resolve(im);
+      im.onerror = () => reject(new Error('图片解码失败'));
+      im.src = dataUrl;
+    });
+    const MAX = 1400;
+    if (img.width <= MAX && dataUrl.length < 900000) return dataUrl;
+    const scale = Math.min(1, MAX / img.width);
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(img.width * scale);
+    canvas.height = Math.round(img.height * scale);
+    canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL('image/jpeg', 0.85);
+  }
+  async function recognizeWithLLM(dataUrl, onProgress) {
+    if (!ready) throw new Error('云端服务未就绪');
+    if (!visionModel) {
+      if (onProgress) onProgress('正在获取可用模型…');
+      const _raw = await cloud.llm.models.list();
+      const list = Array.isArray(_raw) ? _raw : ((_raw && _raw.data) || []);
+      visionModel = list.find(m => m.supportsImages === true && m.disabled !== true) || null;
+      if (!visionModel) throw new Error('当前环境没有可用的视觉识别模型');
+    }
+    if (onProgress) onProgress('正在使用云端视觉模型识别（大图先压缩）…');
+    const shrunk = await shrinkImage(dataUrl);
+    const sys = '你是化学实验手册的专业文字识别助手。逐行转录图片中的全部文字：保留行首编号、【】标题；化学式与单位保持原样（如 N₂、K₂CO₃、80℃、30min、DMSO）；无法辨认的字用〔？〕标注，不要猜测、不要编造、不要添加任何解释。只输出转录文本。';
+    let answer = '';
+    for await (const chunk of cloud.llm.chat.completions.create({
+      model: visionModel.id,
+      messages: [
+        { role: 'system', content: sys },
+        { role: 'user', content: [
+            { type: 'text', text: '请逐行转录这张实验手册图片中的全部文字。' },
+            { type: 'image_url', image_url: { url: shrunk } }
+          ] }
+      ],
+      stream: true
+    })) {
+      const d = chunk.choices && chunk.choices[0] && chunk.choices[0].delta;
+      if (d && d.content) { answer += d.content; if (onProgress) onProgress('识别中… ' + answer.length + ' 字'); }
+    }
+    const out = answer.trim();
+    if (!out) throw new Error('模型未返回文字');
+    return out;
+  }
+
+  window.cloudSync = { boot, pushRunsChanged, pushTemplatesChanged, pushMeta, recognizeWithLLM, getTombstones: async () => (await idbGet('tombstones')) || { runs: [], templates: [] } };
 })();
