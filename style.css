@@ -41,3 +41,7 @@
 .btn:not(:disabled):active{transform:translateY(0);box-shadow:none}
 .btn:disabled{transform:none;box-shadow:none}
 @media (prefers-reduced-motion:reduce){.btn{transition:none}.btn:not(:disabled):hover{transform:none}}
+
+/* ===== 卡片删除实验按钮 ===== */
+.card-delete{color:var(--muted);font-size:13px;min-height:44px;padding:6px 0 6px 10px;flex-shrink:0;transition:color .18s}
+.card-delete:hover{color:#bc3e47}

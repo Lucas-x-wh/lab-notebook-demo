@@ -180,5 +180,5 @@
     } catch (e) { say('云端同步失败：' + e.message); }
   }
 
-  window.cloudSync = { boot, pushRunsChanged, pushTemplatesChanged, pushMeta };
+  window.cloudSync = { boot, pushRunsChanged, pushTemplatesChanged, pushMeta, getTombstones: async () => (await idbGet('tombstones')) || { runs: [], templates: [] } };
 })();
