@@ -45,3 +45,28 @@
 /* ===== 卡片删除实验按钮 ===== */
 .card-delete{color:var(--muted);font-size:13px;min-height:44px;padding:6px 0 6px 10px;flex-shrink:0;transition:color .18s}
 .card-delete:hover{color:#bc3e47}
+
+/* ===== 当量计算 ===== */
+.basis-line{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:14px}
+.basis-line .field{width:150px}
+.basis-echo{background:#fff8e7;border:1px solid #f0e3ba;border-radius:8px;padding:9px 14px;font-size:14px;color:#806728}
+.table-scroll{overflow-x:auto;margin:4px -6px 0}
+table.eq-table{border-collapse:collapse;width:100%;min-width:680px}
+.eq-table th{font-size:12px;color:var(--muted);font-weight:600;text-align:left;padding:8px;border-bottom:1px solid var(--line);white-space:nowrap}
+.eq-table td{padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:middle}
+.eq-table tr.is-basis{background:#fff8e7}
+.eq-table input[type=text],.eq-table input[type=number]{width:100%;padding:9px 10px;border:1px solid #d8e0ed;border-radius:7px;min-height:40px;background:#fff;color:var(--ink)}
+.eq-table input:focus{outline:2px solid var(--light);border-color:var(--blue)}
+.eq-table td.c-name{min-width:150px}.eq-table td.c-m{width:118px}.eq-table td.c-p{width:112px}.eq-table td.c-eq{width:96px}.eq-table td.c-res{min-width:150px}
+.res-main{font-weight:600;color:var(--navy);font-size:15px}
+.res-sub{font-size:12px;color:var(--muted)}
+.req{color:#b83b42;font-weight:400;margin-left:4px}
+.missing-hint{color:#b83b42;font-size:12px}
+.radio-cell{width:44px;text-align:center}
+.radio-cell input{width:17px;height:17px;accent-color:var(--blue)}
+.del-row{color:var(--muted);font-size:16px;padding:6px 8px;border-radius:6px}
+.del-row:hover{color:#b83b42;background:var(--light)}
+.eq-toolbar{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}
+.eq-formula{margin-top:16px;border-top:1px dashed var(--line);padding-top:14px}
+.eq-copy-fallback{margin-top:16px}
+.eq-copy-fallback textarea{width:100%;min-height:78px;padding:12px;border:1px solid #d8e0ed;border-radius:8px;font-size:14px;color:var(--ink);resize:vertical}

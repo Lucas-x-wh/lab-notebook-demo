@@ -35,8 +35,72 @@ async function readImages(e){const files=[...e.target.files];e.target.value='';f
 async function saveObservation(e){e.preventDefault();if(formState.reading)return;const text=$('text').value.trim(),time=$('time').value;if(!text&&!formState.images.length){$('formError').textContent='请填写观察内容，或至少添加一张图片。';return}if(!time||!Number.isFinite(new Date(time).getTime())){$('formError').textContent='请选择有效的观察时间。';return}$('save').disabled=true;clearTimeout(draftTimer);try{const f=formState,r=currentRun();if(r.status!=='active')throw new Error('批次已完成，请先重新打开。');const now=new Date().toISOString();await patchRun(r.id,x=>{const old=x.observations.find(o=>o.id===f.id);const obs={id:old?.id||f.requestId,stepId:f.stepId,text,images:clone(f.images),observedAt:new Date(time).toISOString(),createdAt:old?.createdAt||now,updatedAt:now,revision:(old?.revision||0)+1,annotationAnchor:null};x.observations=x.observations.filter(o=>o.id!==obs.id);x.observations.push(obs)});localStorage.removeItem(draftKey());formState=null;navigate({page:'records',runId:r.id,stepId:route.stepId});toast('记录已保存')}catch(e){$('formError').textContent=e.message;$('save').disabled=false}}
 function leaveForm(next){if(formState.reading)return toast('图片正在读取，请稍候');if(!formState.dirty){formState=null;navigate(next);return}modal(`<h2>离开前如何处理修改？</h2><p>可保留本机文字草稿。未保存图片不会随草稿恢复，需要重新选择。</p><div class="toolbar"><button class="btn" id="keepEdit">继续编辑</button><button class="btn danger" id="dropEdit">放弃修改</button><button class="btn primary" id="keepDraft">保留草稿并离开</button></div>`);$('keepEdit').onclick=closeModal;$('dropEdit').onclick=()=>{clearTimeout(draftTimer);localStorage.removeItem(draftKey());formState=null;closeModal();navigate(next)};$('keepDraft').onclick=()=>{clearTimeout(draftTimer);saveDraft();formState=null;closeModal();navigate(next)}}
 const originalNavigate=navigate;navigate=function(next){if(formState){leaveForm(next);return}if(next.page==='library'&&route.page!=='template')query='';if(next.page==='runs'&&!['run','records','form'].includes(route.page))query='';originalNavigate(next)};
-render=function(){if(!ready)return;try{({library,runs:runsPage,template:templatePage,run:runPage,records:recordsPage,form:formPage}[route.page]||library)()}catch(e){layout(`<div class="empty">页面无法读取。<p>${escapeHTML(e.message)}</p><button class="btn" data-go="library">返回手册</button></div>`)}};
+render=function(){if(!ready)return;try{({library,runs:runsPage,template:templatePage,run:runPage,records:recordsPage,form:formPage,calc:calcPage}[route.page]||library)()}catch(e){layout(`<div class="empty">页面无法读取。<p>${escapeHTML(e.message)}</p><button class="btn" data-go="library">返回手册</button></div>`)}};
 window.addEventListener('beforeunload',e=>{if(formState?.dirty){saveDraft();e.preventDefault();e.returnValue=''}});window.addEventListener('online',()=>{if(!formState)render()});window.addEventListener('offline',()=>{if(!formState)render();else toast('当前离线；本机演示保存仍可用，未连接云端')});
+function calcPage(){
+const EQ_KEY='chem-demo-equiv:v1';
+const EQ_EXAMPLE={qty:100,unit:'mg',basisIndex:1,rows:[{name:'原料A（当量 0.5 示例）',m:150,purity:98,eq:0.5},{name:'原料B（基准，当量 1）',m:100,purity:99,eq:1},{name:'催化剂C（当量 0.05）',m:250,purity:95,eq:0.05}]};
+let st=null;try{st=JSON.parse(localStorage.getItem(EQ_KEY))}catch{}
+if(!st||!Array.isArray(st.rows)||!st.rows.length)st=JSON.parse(JSON.stringify(EQ_EXAMPLE));
+const eqSave=()=>{try{localStorage.setItem(EQ_KEY,JSON.stringify(st))}catch{}};
+const eqNum=v=>{const n=parseFloat(v);return isFinite(n)?n:null};
+const eqFmtN=(x,md)=>{if(x==null||!isFinite(x))return '—';const ax=Math.abs(x);let s;if(ax===0)s='0';else if(ax>=1)s=x.toFixed(md);else if(ax>=0.01)s=x.toPrecision(3);else s=x.toPrecision(2);return s.replace(/(\.\d*?)0+$/,'$1').replace(/\.$/,'')};
+const eqFM=m=>m==null?'—':(Math.abs(m)>=1000?eqFmtN(m/1000,2)+' g':eqFmtN(m,2)+' mg');
+const eqFMP=m=>m==null?'—':(Math.abs(m)>=1000?eqFmtN(m/1000,2)+'g':eqFmtN(m,2)+'mg');
+const eqFA=n=>n==null?'—':(Math.abs(n)>=1000?eqFmtN(n/1000,3)+' mol':eqFmtN(n,3)+' mmol');
+const eqCompute=()=>{
+const out={echo:'—',rows:[]};
+const b=st.rows[st.basisIndex],qty=eqNum(st.qty);
+let nBasis=null,mBasis=null;
+if(b&&qty!=null&&qty>0){
+const M=eqNum(b.m),p=eqNum(b.purity);
+if(M&&M>0&&p&&p>0){
+if(st.unit==='mg'||st.unit==='g'){mBasis=st.unit==='mg'?qty:qty*1000;nBasis=mBasis*(p/100)/M}
+else{nBasis=st.unit==='mmol'?qty:qty*1000;mBasis=nBasis*M/(p/100)}
+out.echo='= '+eqFA(nBasis)+' ／ '+eqFM(mBasis);
+}else out.echo='基准行需先填相对分子质量与纯度';
+}else out.echo='请输入基准量';
+st.rows.forEach(r=>{
+const M=eqNum(r.m),p=eqNum(r.purity),eq=eqNum(r.eq);
+if(nBasis!=null&&M&&M>0&&p&&p>0&&eq!=null&&eq>0){
+const n=nBasis*(eq/(eqNum(b.eq)||1));out.rows.push({ok:true,n,m:n*M/(p/100)});
+}else{
+let hint='';if(eq==null||eq<=0)hint='填当量';else if(!p||p<=0)hint='纯度必填';else if(!M||M<=0)hint='填相对分子质量';else hint='基准量未就绪';
+out.rows.push({ok:false,hint});
+}});
+return out;
+};
+const eqRecalc=()=>{
+const res=eqCompute();
+if($('eqEcho'))$('eqEcho').textContent=res.echo;
+st.rows.forEach((r,i)=>{const cell=document.querySelector('[data-eq-res="'+i+'"]');if(!cell)return;const c=res.rows[i];
+cell.innerHTML=c.ok?'<div class="res-main">'+eqFM(c.m)+'</div><div class="res-sub">n = '+eqFA(c.n)+'</div>':'<span class="missing-hint">—（'+c.hint+'）</span>';});
+document.querySelectorAll('#eqRows tr').forEach((tr,i)=>{tr.classList.toggle('is-basis',i===st.basisIndex)});
+eqSave();
+};
+const eqPaint=()=>{
+$('eqRows').innerHTML=st.rows.map((r,i)=>'<tr class="'+(i===st.basisIndex?'is-basis':'')+'"><td class="radio-cell"><input type="radio" name="eqBasisRow" data-eq-basis="'+i+'" '+(i===st.basisIndex?'checked':'')+' aria-label="设为基准"></td><td class="c-name"><input type="text" data-eq-i="'+i+'" data-eq-k="name" value="'+escapeHTML(r.name)+'" placeholder="如 M2／无水K₂CO₃"></td><td class="c-m"><input type="number" step="any" inputmode="decimal" data-eq-i="'+i+'" data-eq-k="m" value="'+(r.m!=null?r.m:'')+'" placeholder="如 220.1"></td><td class="c-p"><input type="number" step="any" inputmode="decimal" data-eq-i="'+i+'" data-eq-k="purity" value="'+(r.purity!=null?r.purity:'')+'" placeholder="如 98"></td><td class="c-eq"><input type="number" step="any" inputmode="decimal" data-eq-i="'+i+'" data-eq-k="eq" value="'+(r.eq!=null?r.eq:'')+'" placeholder="基准=1"></td><td class="c-res" data-eq-res="'+i+'"></td><td><button class="del-row" data-eq-del="'+i+'" aria-label="删除该行">✕</button></td></tr>').join('');
+document.querySelectorAll('#eqRows input[data-eq-k]').forEach(inp=>{inp.oninput=()=>{const i=+inp.dataset.eqI,k=inp.dataset.eqK;st.rows[i][k]=k==='name'?inp.value:(inp.value===''?null:eqNum(inp.value));eqRecalc()}});
+document.querySelectorAll('#eqRows input[data-eq-basis]').forEach(r=>{r.onchange=()=>{st.basisIndex=+r.dataset.eqBasis;eqPaint()}});
+document.querySelectorAll('#eqRows .del-row').forEach(b=>{b.onclick=()=>{if(st.rows.length<=1)return;st.rows.splice(+b.dataset.eqDel,1);if(st.basisIndex>=st.rows.length)st.basisIndex=st.rows.length-1;eqPaint()}});
+eqRecalc();
+};
+layout('<div class="eyebrow">EQUIVALENT CALCULATOR</div><div class="pagehead"><div><h1>当量计算</h1><div class="muted">设计当量与摩尔比 → 指定基准物质并输入它的一个已知量 → 自动换算全部投料量。</div></div></div><div class="panel"><h3>基准物质</h3><div class="tiny">在下方表格中圆选基准行（通常令其当量 = 1），并输入基准的一个已知量。</div><div class="basis-line"><span class="tiny">基准量</span><input id="eqQty" class="field" type="number" step="any" inputmode="decimal"><select id="eqUnit" class="field"><option value="mg">mg</option><option value="g">g</option><option value="mmol">mmol</option><option value="mol">mol</option></select><span class="basis-echo" id="eqEcho">—</span></div></div><div class="panel"><div class="table-scroll"><table class="eq-table"><thead><tr><th class="radio-cell">基准</th><th>试剂名</th><th>相对分子质量</th><th>纯度 % <span class="req">必填</span></th><th>当量</th><th>投料量</th><th></th></tr></thead><tbody id="eqRows"></tbody></table></div><div class="eq-toolbar"><button class="btn" id="eqAdd">＋ 增行</button><button class="btn" id="eqExample">载入示例</button><button class="btn" id="eqClear">清空</button><button class="btn primary" id="eqCopy">复制投料清单</button></div><p class="tiny eq-formula">公式：<b>投料量 = 基准物质的量 ×（当量 ÷ 基准当量）× 相对分子质量 ÷ 纯度</b>（纯度以 % 输入）。纯度必填，未填写的行显示"—"不参与计算；单位自动换算（mg↔g、mmol↔mol）；当量按任意相对值填写，系统按基准行归一。</p><div class="eq-copy-fallback" id="eqFallback" hidden><div class="tiny" style="margin-bottom:6px">自动复制受限，已为你选中文本，请按 ⌘C 复制：</div><textarea id="eqText" readonly></textarea></div></div>');
+$('eqQty').value=st.qty;$('eqUnit').value=st.unit;
+$('eqQty').oninput=()=>{st.qty=$('eqQty').value;eqRecalc()};
+$('eqUnit').onchange=()=>{st.unit=$('eqUnit').value;eqRecalc()};
+$('eqAdd').onclick=()=>{st.rows.push({name:'',m:null,purity:null,eq:null});eqPaint()};
+$('eqExample').onclick=()=>{st=JSON.parse(JSON.stringify(EQ_EXAMPLE));$('eqQty').value=st.qty;$('eqUnit').value=st.unit;$('eqFallback').hidden=true;eqPaint()};
+$('eqClear').onclick=()=>{st={qty:100,unit:'mg',basisIndex:0,rows:[{name:'',m:null,purity:null,eq:null}]};$('eqQty').value=100;$('eqUnit').value='mg';$('eqFallback').hidden=true;eqPaint()};
+$('eqCopy').onclick=async()=>{
+const res=eqCompute();
+const items=st.rows.map((r,i)=>({r,c:res.rows[i]})).filter(x=>x.c.ok).map(x=>(x.r.name||'未命名').trim()+' '+eqFMP(x.c.m));
+if(!items.length){$('eqFallback').hidden=false;$('eqText').value='（暂无完整可计算的试剂行）';return}
+const text=items.join('；');
+try{await navigator.clipboard.writeText(text);$('eqFallback').hidden=true;const btn=$('eqCopy');const old=btn.textContent;btn.textContent='已复制 ✓';setTimeout(()=>{btn.textContent=old},1400)}catch(e){$('eqFallback').hidden=false;$('eqText').value=text;$('eqText').select()}
+};
+eqPaint();
+}
 (async()=>{try{db=await new Promise((resolve,reject)=>{const q=indexedDB.open('chem-notebook-demo',1);q.onupgradeneeded=()=>q.result.createObjectStore('state');q.onsuccess=()=>resolve(q.result);q.onerror=reject});const applyLocal=async()=>{runs=await requestDB('readonly',s=>s.get('runs'))||[];const imported=await requestDB('readonly',s=>s.get('templates'))||[];templates.unshift(...imported.filter(t=>!templates.some(x=>x.id===t.id)));const edits=await requestDB('readonly',s=>s.get('templateEdits'))||{};templates.forEach(t=>{if(edits[t.id])Object.assign(t,edits[t.id])});const names=await requestDB('readonly',s=>s.get('templateNames'))||{};templates.forEach(t=>{if(typeof names[t.id]==='string'&&names[t.id].trim())t.name=names[t.id]});let _tb=null;try{_tb=await requestDB('readonly',s=>s.get('tombstones'))}catch(e){}for(let i=templates.length-1;i>=0;i--){if(((_tb&&_tb.templates)||[]).includes(templates[i].id))templates.splice(i,1)}};await applyLocal();ready=true;render();if(window.cloudSync)await cloudSync.boot(db);await applyLocal();render()}catch(e){console.error('启动失败:',e);layout('<div class="empty">无法打开本机存储。请允许浏览器保存网站数据后刷新。</div><p style="color:#b83b42;font-size:13px">错误详情：'+(e&&e.message||e)+'</p>')}})();
 
 function chineseNumber(n){const digits='零一二三四五六七八九';if(n<10)return digits[n];if(n<20)return '十'+(n%10?digits[n%10]:'');if(n<100)return digits[Math.floor(n/10)]+'十'+(n%10?digits[n%10]:'');if(n===100)return '一百';return String(n)}
